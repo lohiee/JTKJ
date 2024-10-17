@@ -84,7 +84,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
         System_printf("uartTask\n");
         System_flush();
 
-        // Once per second, you can modify this
+        // Once per second, you can modify this //
         Task_sleep(1000000 / Clock_tickPeriod);
     }
 }
@@ -98,6 +98,8 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
     I2C_Transaction i2cMessage;
 
     I2C_Params_init(&i2cParams);
+
+
 
     // JTKJ: Teht�v� 2. Avaa i2c-v�yl� taskin k�ytt��n
     // JTKJ: Exercise 2. Open the i2c bus
