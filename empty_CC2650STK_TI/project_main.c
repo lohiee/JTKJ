@@ -95,18 +95,17 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
 
     I2C_Handle      i2c;
     I2C_Params      i2cParams;
-    I2C_Transaction i2cMessage;
 
     I2C_Params_init(&i2cParams);
-
-
+    i2cParams.bitRate = I2C_100kHz;
 
     // JTKJ: Teht�v� 2. Avaa i2c-v�yl� taskin k�ytt��n
     // JTKJ: Exercise 2. Open the i2c bus
-    i2c = I2C_open(Board_OPT3001_ADDR, &i2cParams);
+
+    i2c = I2C_open(Board_I2C_TMP, &i2cParams);
     if (i2c == NULL) {
        System_abort("Error Initializing I2C\n");
-       }
+       } //else {System_abort("I2C alustui\n")};
 
     // JTKJ: Teht�v� 2. Alusta sensorin OPT3001 setup-funktiolla
     //       Laita ennen funktiokutsua eteen 100ms viive (Task_sleep)
@@ -119,7 +118,7 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
 
         // JTKJ: Teht�v� 2. Lue sensorilta dataa ja tulosta se Debug-ikkunaan merkkijonona
         // JTKJ: Exercise 2. Read sensor data and print it to the Debug window as string
-        sprintf(output, "valoisuus lukseina on %.4f", opt3001_get_data(&i2c));
+        sprintf(output, "valoisuus lukseina on %.4f\n", opt3001_get_data(&i2c));
         System_printf(output);
 
 

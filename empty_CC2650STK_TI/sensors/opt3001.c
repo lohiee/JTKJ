@@ -88,20 +88,21 @@ double opt3001_get_data(I2C_Handle *i2c) {
     i2cMessage.readBuf = rxBuffer;  // Vastaanottopuskurin asetus
     i2cMessage.readCount = 2;       // Vastaanotetaan 2 tavua
 
-    uint16_t reg = (rxBuffer[0] << 8) | rxBuffer[1];
 
 	if (opt3001_get_status(i2c) & OPT3001_DATA_READY) {
 
 		if (I2C_transfer(*i2c, &i2cMessage)) {
+		    uint16_t reg = rxBuffer[0];
+		    reg = reg << 8;
+		    reg = reg | rxBuffer[1];
 
-	        // JTKJ: Here the conversion from register value to lux
-
+		    // JTKJ: Here the conversion from register value to lux
 		    uint16_t maskR = 0b0000111111111111;
 		    uint16_t r = reg & maskR;
 		    uint16_t e = reg >> 12;
-		    lux = 0.01 * pow(2, e) * r;
+		    lux = 0.01 * pow(2, (int) e) * (int) r;
 
-
+		    return lux;
 		} else {
 
 			System_printf("OPT3001: Data read failed!\n");
