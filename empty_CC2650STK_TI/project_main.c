@@ -69,6 +69,24 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
 
     // JTKJ: Teht�v� 4. Lis�� UARTin alustus: 9600,8n1
     // JTKJ: Exercise 4. Setup here UART connection as 9600,8n1
+    UART_Handle uart;
+    UART_Params uartParams;
+
+    UART_Params_init(&uartParams);
+    uartParams.writeDataMode = UART_DATA_TEXT;
+    uartParams.readDataMode = UART_DATA_TEXT;
+    uartParams.readEcho = UART_ECHO_OFF;
+    uartParams.readMode=UART_MODE_BLOCKING;
+    uartParams.baudRate = 9600; // nopeus 9600baud
+    uartParams.dataLength = UART_LEN_8; // 8
+    uartParams.parityType = UART_PAR_NONE; // n
+    uartParams.stopBits = UART_STOP_ONE; // 1
+
+    uart = UART_open(Board_UART0, &uartParams);
+
+    if (uart == NULL) {
+         System_abort("Error opening the UART");
+    }
 
     while (1) {
 
@@ -76,10 +94,17 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
         //       Muista tilamuutos
         // JTKJ: Exercise 3. Print out sensor data as string to debug window if the state is correct
         //       Remember to modify state
+        if (programState == DATA_READY) {
+            char output[40];
+            sprintf(output, "Uart debug Valoisuus = %f\n\r", ambientLight);
+            System_printf(output);
 
-        // JTKJ: Teht�v� 4. L�het� sama merkkijono UARTilla
-        // JTKJ: Exercise 4. Send the same sensor data string with UART
+            // JTKJ: Teht�v� 4. L�het� sama merkkijono UARTilla
+            // JTKJ: Exercise 4. Send the same sensor data string with UART
+            UART_write(uart, output, strlen(output));
 
+            programState = WAITING;
+        }
         // Just for sanity check for exercise, you can comment this out
         System_printf("uartTask\n");
         System_flush();
@@ -97,7 +122,7 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
     I2C_Params      i2cParams;
 
     I2C_Params_init(&i2cParams);
-    i2cParams.bitRate = I2C_100kHz;
+    i2cParams.bitRate = I2C_400kHz;
 
     // JTKJ: Teht�v� 2. Avaa i2c-v�yl� taskin k�ytt��n
     // JTKJ: Exercise 2. Open the i2c bus
@@ -105,7 +130,7 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
     i2c = I2C_open(Board_I2C_TMP, &i2cParams);
     if (i2c == NULL) {
        System_abort("Error Initializing I2C\n");
-       } //else {System_abort("I2C alustui\n")};
+       }
 
     // JTKJ: Teht�v� 2. Alusta sensorin OPT3001 setup-funktiolla
     //       Laita ennen funktiokutsua eteen 100ms viive (Task_sleep)
@@ -118,14 +143,19 @@ Void sensorTaskFxn(UArg arg0, UArg arg1) {
 
         // JTKJ: Teht�v� 2. Lue sensorilta dataa ja tulosta se Debug-ikkunaan merkkijonona
         // JTKJ: Exercise 2. Read sensor data and print it to the Debug window as string
-        sprintf(output, "valoisuus lukseina on %.4f\n", opt3001_get_data(&i2c));
-        System_printf(output);
+
+        ambientLight = opt3001_get_data(&i2c);
+        sprintf(output, "%.4f\n", ambientLight);
+        System_printf("Valoisuus on %s\n", output);
 
 
         // JTKJ: Teht�v� 3. Tallenna mittausarvo globaaliin muuttujaan
         //       Muista tilamuutos
         // JTKJ: Exercise 3. Save the sensor value into the global variable
         //       Remember to modify state
+
+
+        programState = DATA_READY;
 
         // Just for sanity check for exercise, you can comment this out
         System_printf("sensorTask\n");
@@ -150,6 +180,7 @@ Int main(void) {
     
     // JTKJ: Teht�v� 4. Ota UART k�ytt��n ohjelmassa
     // JTKJ: Exercise 4. Initialize UART
+    Board_initUART();
 
     // JTKJ: Teht�v� 1. Ota painonappi ja ledi ohjelman k�ytt��n
     //       Muista rekister�id� keskeytyksen k�sittelij� painonapille
