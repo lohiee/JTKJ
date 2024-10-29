@@ -500,7 +500,7 @@ void mpu9250_get_data(I2C_Handle *i2c, float *ax, float *ay, float *az, float *g
 	uint8_t rawData[14] = {0}; // Register data
 
    	// Read register values into array rawData
-	readByte(ACCEL_XOUT_H, 14, &rawData);
+	readByte(ACCEL_XOUT_H, 14, &rawData[0]);
 
 	// JTKJ: Convert the 8-bit values (the _h and _l registers) in the array rawData into 16-bit values
 	int16_t nx = (rawData[0] << 8) | rawData[1];
