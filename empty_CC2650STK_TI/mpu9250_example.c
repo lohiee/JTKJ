@@ -83,12 +83,12 @@ Void sensorFxn(UArg arg0, UArg arg1) {
 	    // MPU ask data
 		mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
 
-		sprintf(axString, "Kiihtyvyys X on %.4f   ", ax);
-		sprintf(ayString, "Y on %.4f   ", ay);
-        sprintf(azString, "Z on %.4f\n", az);
-        sprintf(gxString, "Gyro X on %.4f   ", gx);
-        sprintf(gyString, "Y on %.4f   ", gy);
-        sprintf(gzString, "Z on %.4f\n\n", gz);
+		//sprintf(axString, "Kiihtyvyys (x, y, y)  on %.4f,   ", ax);
+		//sprintf(ayString, "%.4f,   ", ay);
+        //sprintf(azString, "%.4f\n", az);
+        sprintf(gxString, "Gyro (x, y, z) on %.4f,   ", gx);
+        //sprintf(gyString, "%.4f,   ", gy);
+        //sprintf(gzString, "%.4f\n\n", gz);
         System_printf(axString);
         System_printf(ayString);
         System_printf(azString);

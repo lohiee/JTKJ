@@ -28,7 +28,7 @@ Void taskFxn(UArg arg0, UArg arg1) {
 
   while (1) {
     buzzerOpen(hBuzzer);
-    buzzerSetFrequency(3000);
+    buzzerSetFrequency(1000);
     Task_sleep(500000 / Clock_tickPeriod);
     buzzerClose();
 
