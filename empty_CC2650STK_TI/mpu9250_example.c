@@ -15,6 +15,7 @@
 #include <ti/drivers/i2c/I2CCC26XX.h>
 #include <ti/drivers/PIN.h>
 #include <ti/drivers/pin/PINCC26XX.h>
+
 #include "Board.h"
 #include "sensors/mpu9250.h"
 
@@ -77,18 +78,19 @@ Void sensorFxn(UArg arg0, UArg arg1) {
         char axString[40];
         char ayString[20];
         char azString[20];
-        char gxString[20];
+        char gxString[40];
         char gyString[20];
         char gzString[20];
 	    // MPU ask data
 		mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
 
-		//sprintf(axString, "Kiihtyvyys (x, y, y)  on %.4f,   ", ax);
-		//sprintf(ayString, "%.4f,   ", ay);
-        //sprintf(azString, "%.4f\n", az);
+		sprintf(axString, "%.4f,   ", ax);
+		sprintf(ayString, "%.4f,   ", ay);
+        sprintf(azString, "%.4f\n", az);
         sprintf(gxString, "Gyro (x, y, z) on %.4f,   ", gx);
-        //sprintf(gyString, "%.4f,   ", gy);
-        //sprintf(gzString, "%.4f\n\n", gz);
+        sprintf(gyString, "%.4f,   ", gy);
+        sprintf(gzString, "%.4f\n\n", gz);
+
         System_printf(axString);
         System_printf(ayString);
         System_printf(azString);
@@ -97,7 +99,7 @@ Void sensorFxn(UArg arg0, UArg arg1) {
         System_printf(gzString);
 
 		// Sleep 100ms
-    	Task_sleep(100000 / Clock_tickPeriod);
+    	Task_sleep(50000 / Clock_tickPeriod);
 
 	}
 
