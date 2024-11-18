@@ -1,7 +1,7 @@
 /* C Standard library */
 #include <stdio.h>
-
-#include  <stdlib.h>
+#include <stdlib.h>
+#include <string.h>
 /* XDCtools files */
 #include <xdc/std.h>
 #include <xdc/runtime/System.h>
@@ -31,13 +31,14 @@
 #define STACKSIZE 2048
 Char sensorTaskStack[STACKSIZE];
 Char buzzerTaskStack[STACKSIZE];
+Char uartTaskStack[STACKSIZE];
 
 // Prototypes
 void buzzerFxn();
 char detectCharFromMovm(float *array);
 
 // Global variables
-enum state { WAITING=1, BUZZ};
+enum state { WAITING=1, BUZZ, UART_SEND};
 enum state programState = WAITING;
 
 char detectedChar = 0;
@@ -97,31 +98,39 @@ char detectCharFromMovm(float *array) {
 
     if (xAverage > 0.85 && reset == 0) {
         //System_printf(" ");
+        /*
         memset(xCoordinates, 0, sizeof(xCoordinates));
         memset(yCoordinates, 0, sizeof(yCoordinates));
         memset(zCoordinates, 0, sizeof(zCoordinates));
+        */
         reset = 1;
             return ' ';
     } else if (yAverage > 0.85 && reset == 0) {
         //System_printf(".");
+        /*
         memset(xCoordinates, 0, sizeof(xCoordinates));
         memset(yCoordinates, 0, sizeof(yCoordinates));
         memset(zCoordinates, 0, sizeof(zCoordinates));
+        */
         reset = 1;
             return '.';
     } else if (yAverage < -0.85 && reset == 0) {
         //System_printf("-");
+        /*
         memset(xCoordinates, 0, sizeof(xCoordinates));
         memset(yCoordinates, 0, sizeof(yCoordinates));
         memset(zCoordinates, 0, sizeof(zCoordinates));
+        */
         reset = 1;
             return '-';
     } else if (zAverage > 0.85 && reset == 1) {
-        System_printf("Reset\n");
-         memset(xCoordinates, 0, sizeof(xCoordinates));
-         memset(yCoordinates, 0, sizeof(yCoordinates));
-         memset(zCoordinates, 0, sizeof(zCoordinates));
-         reset = 0;
+        //System_printf("Reset\n");
+        /*
+        memset(xCoordinates, 0, sizeof(xCoordinates));
+        memset(yCoordinates, 0, sizeof(yCoordinates));
+        memset(zCoordinates, 0, sizeof(zCoordinates));
+        */
+        reset = 0;
              return 0;
     } else {
         return 0;
@@ -178,10 +187,11 @@ Void sensorFxn(UArg arg0, UArg arg1) {
                 char teksti[20];
                 sprintf(teksti, "%c", detectedChar);
                 System_printf(teksti);
+                //System_flush();
                 programState = BUZZ;
             }
             // Sleep 100ms
-            Task_sleep(100000 / Clock_tickPeriod);
+            Task_sleep(50000 / Clock_tickPeriod);
         }
     }
 
@@ -209,31 +219,77 @@ void buzzerFxn() {
             buzzerSetFrequency(800);
             Task_sleep(500000 / Clock_tickPeriod);
             buzzerClose();
-            programState = WAITING;
+            programState = UART_SEND;
         } else if (detectedChar == '.' && programState == BUZZ) {
             buzzerOpen(hBuzzer);
             buzzerSetFrequency(1500);
             Task_sleep(250000 / Clock_tickPeriod);
             buzzerClose();
-            programState = WAITING;
+            programState = UART_SEND;
+        } else if (detectedChar == ' ' && programState == BUZZ) {
+            buzzerOpen(hBuzzer);
+            buzzerSetFrequency(400);
+            Task_sleep(250000 / Clock_tickPeriod);
+            buzzerClose();
+            Task_sleep(250000 / Clock_tickPeriod);
+            buzzerOpen(hBuzzer);
+            buzzerSetFrequency(400);
+            Task_sleep(250000 / Clock_tickPeriod);
+            buzzerClose();
+            programState = UART_SEND;
         } else {
-            programState = WAITING;
             Task_sleep(100000 / Clock_tickPeriod);
         }
     }
 }
 
+Void uartTaskFxn(UArg arg0, UArg arg1) {
+    UART_Handle uart;
+    UART_Params uartParams;
+
+    UART_Params_init(&uartParams);
+    uartParams.writeDataMode = UART_DATA_TEXT;
+    uartParams.readDataMode = UART_DATA_TEXT;
+    uartParams.readEcho = UART_ECHO_OFF;
+    uartParams.readMode = UART_MODE_BLOCKING;
+    uartParams.baudRate = 9600; // nopeus 9600baud
+    uartParams.dataLength = UART_LEN_8; // 8
+    uartParams.parityType = UART_PAR_NONE; // n
+    uartParams.stopBits = UART_STOP_ONE; // 1
+
+    uart = UART_open(Board_UART0, &uartParams);
+
+    if (uart == NULL) {
+         System_abort("Error opening the UART");
+    }
+    while (1) {
+        if (programState == UART_SEND) {
+            if (detectedChar != 0) {
+                char characterOut[10];
+                sprintf(characterOut, "%c\r\n\0", detectedChar);
+                UART_write(uart, characterOut, strlen(characterOut));
+            }
+            programState = WAITING;
+        }
+        Task_sleep(500000 / Clock_tickPeriod);
+    }
+}
+
 
 int main(void) {
-
+    // Sensor task
     Task_Handle sensorTask;
     Task_Params sensorTaskParams;
-
+    //  Buzzer task
     Task_Handle buzzerTask;
     Task_Params buzzerTaskParams;
+    // UART task
+    Task_Handle uartTaskHandle;
+    Task_Params uartTaskParams;
 
     Board_initGeneral();
     Board_initI2C();
+    Board_initUART();
 
     // Open MPU power pin
     hMpuPin = PIN_open(&MpuPinState, MpuPinConfig);
@@ -261,6 +317,15 @@ int main(void) {
     buzzerTask = Task_create((Task_FuncPtr)buzzerFxn, &buzzerTaskParams, NULL);
     if (buzzerTask == NULL) {
         System_abort("Buzzer task create failed");
+    }
+
+    Task_Params_init(&uartTaskParams);
+    uartTaskParams.stackSize = STACKSIZE;
+    uartTaskParams.stack = &uartTaskStack;
+    uartTaskParams.priority=2;
+    uartTaskHandle = Task_create(uartTaskFxn, &uartTaskParams, NULL);
+    if (uartTaskHandle == NULL) {
+        System_abort("UART task create failed!");
     }
 
 
