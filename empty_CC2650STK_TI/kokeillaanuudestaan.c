@@ -36,12 +36,16 @@ Char uartTaskStack[STACKSIZE];
 // Prototypes
 void buzzerFxn();
 char detectCharFromMovm(float *array);
+void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len);
 
 // Global variables
 enum state { WAITING=1, BUZZ, UART_SEND};
 enum state programState = WAITING;
 
 char detectedChar = 0;
+
+// Vastaanottopuskuri
+uint8_t uartBuffer[1];
 
 // MPU power pin global variables
 static PIN_Handle hMpuPin;
@@ -251,7 +255,8 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     uartParams.writeDataMode = UART_DATA_TEXT;
     uartParams.readDataMode = UART_DATA_TEXT;
     uartParams.readEcho = UART_ECHO_OFF;
-    uartParams.readMode = UART_MODE_BLOCKING;
+    uartParams.readMode = UART_MODE_CALLBACK;
+    uartParams.readCallback  = &uartReadFxn;
     uartParams.baudRate = 9600; // nopeus 9600baud
     uartParams.dataLength = UART_LEN_8; // 8
     uartParams.parityType = UART_PAR_NONE; // n
@@ -262,6 +267,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     if (uart == NULL) {
          System_abort("Error opening the UART");
     }
+    UART_read(uart, uartBuffer, 1);
     while (1) {
         if (programState == UART_SEND) {
             if (detectedChar != 0) {
@@ -274,7 +280,12 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
         Task_sleep(500000 / Clock_tickPeriod);
     }
 }
-
+void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len){
+    char teksti[2];
+    sprintf(teksti, "%c", uartBuffer[0]);
+    System_printf(teksti);
+    UART_read(handle, rxBuf, 1);
+}
 
 int main(void) {
     // Sensor task
