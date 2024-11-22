@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 /* XDCtools files */
 #include <xdc/std.h>
 #include <xdc/runtime/System.h>
@@ -27,25 +28,31 @@
 #include "Board.h"
 #include "buzzer.h"
 
-#define SAMPLESIZE 4
+#define SAMPLESIZE 3
 #define STACKSIZE 2048
 Char sensorTaskStack[STACKSIZE];
+Char buzzerCallTaskStack[STACKSIZE];
 Char buzzerTaskStack[STACKSIZE];
 Char uartTaskStack[STACKSIZE];
+Char uartReadTaskStack[STACKSIZE];
 
 // Prototypes
-void buzzerFxn();
+void buzzerCallFxn();
+int buzzerFxn(Char inputChar);
 char detectCharFromMovm(float *array);
 void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len);
 
 // Global variables
-enum state { WAITING=1, BUZZ, UART_SEND};
+enum state { WAITING=1, BUZZER_WRITE, BUZZER_READ, UART_WRITE, UART_READ};
 enum state programState = WAITING;
 
 char detectedChar = 0;
 
+
 // Vastaanottopuskuri
 uint8_t uartBuffer[1];
+char morseBuffer[50] = {0};
+int morseBufferSize = 0;
 
 // MPU power pin global variables
 static PIN_Handle hMpuPin;
@@ -65,7 +72,9 @@ static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
 
 char detectCharFromMovm(float *array) {
 
-    static uint8_t reset = 0; // 0 viimeksi tunnistettu reset, 1 viimeksi tunnistettu merrki
+    // 0 viimeksi tunnistettu reset, 1 viimeksi tunnistettu merrki
+    static uint8_t reset = 0;
+
     static float xCoordinates[SAMPLESIZE] = {0};
     static float yCoordinates[SAMPLESIZE] = {0};
     static float zCoordinates[SAMPLESIZE] = {0};
@@ -101,39 +110,15 @@ char detectCharFromMovm(float *array) {
     // Tunnistetaan asento painovoimalla (akseli antaa noin 1G arvoja)
 
     if (xAverage > 0.85 && reset == 0) {
-        //System_printf(" ");
-        /*
-        memset(xCoordinates, 0, sizeof(xCoordinates));
-        memset(yCoordinates, 0, sizeof(yCoordinates));
-        memset(zCoordinates, 0, sizeof(zCoordinates));
-        */
         reset = 1;
             return ' ';
     } else if (yAverage > 0.85 && reset == 0) {
-        //System_printf(".");
-        /*
-        memset(xCoordinates, 0, sizeof(xCoordinates));
-        memset(yCoordinates, 0, sizeof(yCoordinates));
-        memset(zCoordinates, 0, sizeof(zCoordinates));
-        */
         reset = 1;
             return '.';
     } else if (yAverage < -0.85 && reset == 0) {
-        //System_printf("-");
-        /*
-        memset(xCoordinates, 0, sizeof(xCoordinates));
-        memset(yCoordinates, 0, sizeof(yCoordinates));
-        memset(zCoordinates, 0, sizeof(zCoordinates));
-        */
         reset = 1;
             return '-';
-    } else if (zAverage > 0.85 && reset == 1) {
-        //System_printf("Reset\n");
-        /*
-        memset(xCoordinates, 0, sizeof(xCoordinates));
-        memset(yCoordinates, 0, sizeof(yCoordinates));
-        memset(zCoordinates, 0, sizeof(zCoordinates));
-        */
+    } else if (zAverage > 0.5 && reset == 1) {
         reset = 0;
              return 0;
     } else {
@@ -191,12 +176,13 @@ Void sensorFxn(UArg arg0, UArg arg1) {
                 char teksti[20];
                 sprintf(teksti, "%c", detectedChar);
                 System_printf(teksti);
-                //System_flush();
-                programState = BUZZ;
+                //buzzerFxn(detectedChar);
+                programState = UART_WRITE;
             }
-            // Sleep 100ms
-            Task_sleep(50000 / Clock_tickPeriod);
+
         }
+// Sleep 50ms
+            Task_sleep(50000 / Clock_tickPeriod);
     }
 
     // Program never gets here..
@@ -216,34 +202,86 @@ PIN_Config cBuzzer[] = {
   PIN_TERMINATE
 };
 
-void buzzerFxn() {
+void buzzerCallFxn() {
+
     while (1) {
-        if (detectedChar == '-' && programState == BUZZ) {
-            buzzerOpen(hBuzzer);
-            buzzerSetFrequency(800);
-            Task_sleep(500000 / Clock_tickPeriod);
-            buzzerClose();
-            programState = UART_SEND;
-        } else if (detectedChar == '.' && programState == BUZZ) {
-            buzzerOpen(hBuzzer);
-            buzzerSetFrequency(1500);
-            Task_sleep(250000 / Clock_tickPeriod);
-            buzzerClose();
-            programState = UART_SEND;
-        } else if (detectedChar == ' ' && programState == BUZZ) {
-            buzzerOpen(hBuzzer);
-            buzzerSetFrequency(400);
-            Task_sleep(250000 / Clock_tickPeriod);
-            buzzerClose();
-            Task_sleep(250000 / Clock_tickPeriod);
-            buzzerOpen(hBuzzer);
-            buzzerSetFrequency(400);
-            Task_sleep(250000 / Clock_tickPeriod);
-            buzzerClose();
-            programState = UART_SEND;
-        } else {
-            Task_sleep(100000 / Clock_tickPeriod);
+        if (programState == BUZZER_WRITE) {
+            switch (detectedChar) {
+                case '-':
+                    if (buzzerFxn(detectedChar) == 0) {
+                        programState = WAITING;
+                    }
+
+                    break;
+                case '.':
+                    if (buzzerFxn(detectedChar) == 0) {
+
+                    }
+                    programState = WAITING;
+                    break;
+                case ' ':
+                    if (buzzerFxn(detectedChar) == 0) {
+
+                    }
+                    programState = WAITING;
+                    break;
+                default:
+                    programState = WAITING;
+                    break;
+            }
+
+        } else if (programState == BUZZER_READ) {
+            int i = 0;
+            for (i = 0; i < sizeof(morseBuffer) / sizeof(morseBuffer[0]); i++) {
+                if (morseBuffer[i] == '.'
+                   || morseBuffer[i] == '-'
+                   || morseBuffer[i] == ' ') {
+                    Task_sleep(500000 / Clock_tickPeriod);
+                    buzzerFxn(morseBuffer[i]);
+                    char teksti[2];
+                    sprintf(teksti, "%c\n", morseBuffer[i]);
+                    System_printf(teksti);
+                }
+            }
+            memset(morseBuffer, 0, sizeof(morseBuffer));
+            morseBufferSize = 0;
+            programState = WAITING;
+
         }
+        Task_sleep(100000 / Clock_tickPeriod);
+    }
+
+
+}
+
+int buzzerFxn(Char inputChar) {
+    if (inputChar == '-') {
+        buzzerOpen(hBuzzer);
+        buzzerSetFrequency(800);
+        Task_sleep(100000 / Clock_tickPeriod);
+        buzzerClose();
+        return 0;
+
+    } else if (inputChar == '.') {
+        buzzerOpen(hBuzzer);
+        buzzerSetFrequency(3500);
+        Task_sleep(30000 / Clock_tickPeriod);
+        buzzerClose();
+        return 0;
+
+    } else if (inputChar == ' ') {
+        buzzerOpen(hBuzzer);
+        buzzerSetFrequency(400);
+        Task_sleep(20000 / Clock_tickPeriod);
+        buzzerClose();
+        Task_sleep(100000 / Clock_tickPeriod);
+        buzzerOpen(hBuzzer);
+        buzzerSetFrequency(400);
+        Task_sleep(20000 / Clock_tickPeriod);
+        buzzerClose();
+        return 0;
+    } else {
+        return 1;
     }
 }
 
@@ -268,35 +306,59 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
          System_abort("Error opening the UART");
     }
     UART_read(uart, uartBuffer, 1);
+
     while (1) {
-        if (programState == UART_SEND) {
+        if (programState == UART_WRITE) {
             if (detectedChar != 0) {
                 char characterOut[10];
                 sprintf(characterOut, "%c\r\n\0", detectedChar);
-                UART_write(uart, characterOut, strlen(characterOut));
+                UART_write(uart, characterOut, strlen(characterOut) + 1);
             }
-            programState = WAITING;
+            programState = BUZZER_WRITE;
         }
         Task_sleep(500000 / Clock_tickPeriod);
     }
 }
 void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len){
-    char teksti[2];
-    sprintf(teksti, "%c", uartBuffer[0]);
-    System_printf(teksti);
+
+    if (uartBuffer[0] == '-' || uartBuffer[0] == '.' || uartBuffer[0] == ' ') {
+        morseBuffer[morseBufferSize] = uartBuffer[0];
+        morseBuffer[morseBufferSize + 1] = '\0';
+        morseBufferSize++;
+    }
+
     UART_read(handle, rxBuf, 1);
+    programState = BUZZER_READ;
+}
+
+
+void uartReadTaskFxn() {
+    while (1) {
+        //if (programState == UART_READ) {
+        //    programState = BUZZER_READ;
+        //}
+        Task_sleep(100000 / Clock_tickPeriod);
+    }
 }
 
 int main(void) {
     // Sensor task
     Task_Handle sensorTask;
     Task_Params sensorTaskParams;
-    //  Buzzer task
+    // Buzzer task
     Task_Handle buzzerTask;
     Task_Params buzzerTaskParams;
+
+    // Buzzer Caller task
+    Task_Handle buzzerCallTask;
+    Task_Params buzzerCallTaskParams;
+
     // UART task
     Task_Handle uartTaskHandle;
     Task_Params uartTaskParams;
+    // UART_read task
+    Task_Handle uartReadTaskHandle;
+    Task_Params uartReadTaskParams;
 
     Board_initGeneral();
     Board_initI2C();
@@ -330,6 +392,15 @@ int main(void) {
         System_abort("Buzzer task create failed");
     }
 
+    Task_Params_init(&buzzerCallTaskParams);
+    buzzerCallTaskParams.stackSize = STACKSIZE;
+    buzzerCallTaskParams.stack = &buzzerCallTaskStack;
+    uartTaskParams.priority=2;
+    buzzerCallTask = Task_create((Task_FuncPtr)buzzerCallFxn, &buzzerCallTaskParams, NULL);
+    if (buzzerCallTask == NULL) {
+        System_abort("Buzzer call task create failed");
+    }
+
     Task_Params_init(&uartTaskParams);
     uartTaskParams.stackSize = STACKSIZE;
     uartTaskParams.stack = &uartTaskStack;
@@ -339,6 +410,14 @@ int main(void) {
         System_abort("UART task create failed!");
     }
 
+    Task_Params_init(&uartReadTaskParams);
+    uartReadTaskParams.stackSize = STACKSIZE;
+    uartReadTaskParams.stack = &uartReadTaskStack;
+    uartReadTaskParams.priority=2;
+    uartReadTaskHandle = Task_create((Task_FuncPtr)uartReadTaskFxn, &uartReadTaskParams, NULL);
+    if (uartReadTaskHandle == NULL) {
+        System_abort("UART read task create failed!");
+    }
 
     System_printf("Hello World\n");
     System_flush();
