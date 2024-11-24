@@ -1,25 +1,15 @@
-/* Eemil Lohi, Lauri Partanen
- * Käytettävien tehtävien määrä: 4
- * sensorFxn
- *
- *
- *
- *
- *
- */
+/* Eemil Lohi, Lauri Partanen */
 
-
-
-/* C Standard library */
+/* C standardikirjastot */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* XDCtools files */
+/* XDCtools tiedostot */
 #include <xdc/std.h>
 #include <xdc/runtime/System.h>
 
-/* BIOS Header files */
+/* BIOS otsikkotiedostot */
 #include <ti/sysbios/BIOS.h>
 #include <ti/sysbios/knl/Clock.h>
 #include <ti/sysbios/knl/Task.h>
@@ -31,7 +21,7 @@
 #include <ti/drivers/power/PowerCC26XX.h>
 #include <ti/drivers/UART.h>
 
-/* Board Header files */
+/* Laitteen otsikkotiedostot */
 #include "Board.h"
 /* Kiihtyvyysanturin otsikkotiedosto */
 #include "sensors/mpu9250.h"
@@ -85,6 +75,9 @@ static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
     .pinSCL = Board_I2C0_SCL1
 };
 
+
+/* Palauttaa tunnistetun merkin, jos annettu data täyttää
+ * merkin ehdot, muulloin palauttaa 0 */
 Char detectCharFromMovm(float *mpuValuesArray) {
 
     /* reset vaatii että SensorTag palautetaan neutraaliin
@@ -188,14 +181,17 @@ Void sensorFxn(UArg arg0, UArg arg1) {
     /* Ikuinen silmukka */
     while (1) {
         if (programState == WAITING) {
-        // MPU ask data
+            /* Kysytään liikeanturilata dataa */
             mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
 
-            //store MPU data to an array
+            /* Tallennetaan saatu data taulukkoon */
             float mpuValues[6] = {ax, ay, az, gx, gy, gz};
 
+            /* Kutsutaan merkintunnistusfunktiota ja tallennetaan
+             * sen palauttama arvo globaaliin muuttujaan*/
             detectedChar = detectCharFromMovm(mpuValues);
 
+            /* detectCharFromMovm palauttaa aina 0 jos mekkiä ei tunnistettu */
             if(detectedChar != 0) {
                 char teksti[20];
                 sprintf(teksti, "%c", detectedChar);
@@ -331,6 +327,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
          System_abort("Error opening the UART");
     }
     UART_read(uart, uartBuffer, 1);
+
 
     while (1) {
         if (programState == UART_WRITE) {
