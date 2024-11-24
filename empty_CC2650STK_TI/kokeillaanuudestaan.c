@@ -148,7 +148,7 @@ Void sensorFxn(UArg arg0, UArg arg1) {
 
     float ax, ay, az, gx, gy, gz;
 
-    I2C_Handle i2cMPU; // MPU9250 anturille oma I2C rajapinta
+    I2C_Handle i2cMPU; // MPU9250 anturille I2C rajapinta
     I2C_Params i2cMPUParams;
 
     I2C_Params_init(&i2cMPUParams);
@@ -328,7 +328,6 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     }
     UART_read(uart, uartBuffer, 1);
 
-
     while (1) {
         if (programState == UART_WRITE) {
             if (detectedChar != 0) {
@@ -361,6 +360,7 @@ int main(void) {
     /* Sensor task */
     Task_Handle sensorTask;
     Task_Params sensorTaskParams;
+
     /* Buzzer task */
     Task_Handle buzzerTask;
     Task_Params buzzerTaskParams;
