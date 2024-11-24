@@ -1,8 +1,20 @@
+/* Eemil Lohi, Lauri Partanen
+ * Käytettävien tehtävien määrä: 4
+ * sensorFxn
+ *
+ *
+ *
+ *
+ *
+ */
+
+
+
 /* C Standard library */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+
 /* XDCtools files */
 #include <xdc/std.h>
 #include <xdc/runtime/System.h>
@@ -21,93 +33,103 @@
 
 /* Board Header files */
 #include "Board.h"
-// For MPU
-#include "sensors/opt3001.h"
+/* Kiihtyvyysanturin otsikkotiedosto */
 #include "sensors/mpu9250.h"
-// For buzzer
-#include "Board.h"
+/* Kaiuttimen otsikkotiedosto */
 #include "buzzer.h"
 
-#define SAMPLESIZE 3
+#define SAMPLESIZE 4
 #define STACKSIZE 2048
 Char sensorTaskStack[STACKSIZE];
 Char buzzerCallTaskStack[STACKSIZE];
 Char buzzerTaskStack[STACKSIZE];
 Char uartTaskStack[STACKSIZE];
-Char uartReadTaskStack[STACKSIZE];
 
-// Prototypes
-void buzzerCallFxn();
+/* Funktioiden protyypit */
+Char detectCharFromMovm(float *array);
+Void sensorFxn(UArg arg0, UArg arg1);
+Void buzzerCallFxn();
 int buzzerFxn(Char inputChar);
-char detectCharFromMovm(float *array);
-void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len);
+Void uartTaskFxn(UArg arg0, UArg arg1);
+Void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len);
 
-// Global variables
+/* Globaalit muuttujat */
 enum state { WAITING=1, BUZZER_WRITE, BUZZER_READ, UART_WRITE, UART_READ};
 enum state programState = WAITING;
 
-char detectedChar = 0;
+/* Viimeisin liikeanturilla tunnistettu merkki */
+Char detectedChar = 0;
 
-
-// Vastaanottopuskuri
+/* Vastaanottopuskuri uartille */
 uint8_t uartBuffer[1];
+
+/* Tähän taulukkoon tallentuu uartilla vastaanotetut morse merkit */
 char morseBuffer[50] = {0};
+
+/* Tämä muuttuja pitää lukua, montako merkkiä morseBufferissa on */
 int morseBufferSize = 0;
 
-// MPU power pin global variables
+/* Kiihtyvyysanturin virtapinnin globaalit muuttujat */
 static PIN_Handle hMpuPin;
 static PIN_State  MpuPinState;
 
-// MPU power pin
+/* Kiihtyvyysanturin virtapinni */
 static PIN_Config MpuPinConfig[] = {
     Board_MPU_POWER  | PIN_GPIO_OUTPUT_EN | PIN_GPIO_HIGH | PIN_PUSHPULL | PIN_DRVSTR_MAX,
     PIN_TERMINATE
 };
 
-// MPU uses its own I2C interface
+/* Kiihtyvyysanturin I2C rajapinta */
 static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
     .pinSDA = Board_I2C0_SDA1,
     .pinSCL = Board_I2C0_SCL1
 };
 
-char detectCharFromMovm(float *array) {
+Char detectCharFromMovm(float *mpuValuesArray) {
 
-    // 0 viimeksi tunnistettu reset, 1 viimeksi tunnistettu merrki
+    /* reset vaatii että SensorTag palautetaan neutraaliin
+       asentoon ennen seuraavan merkin tunnistamista,
+       jos reset arvo on 0 voidaan uusi merkki tunnistaa,
+       jos se on 1 täytyy laite käytää reset asennossa*/
     static uint8_t reset = 0;
 
     static float xCoordinates[SAMPLESIZE] = {0};
     static float yCoordinates[SAMPLESIZE] = {0};
     static float zCoordinates[SAMPLESIZE] = {0};
+
+    /* SAMPLESIZE on glabaali muuttuja, joka määrittää
+       kuinka monesta mittaustuloksesta otetaan keskiarvo */
     uint8_t i = SAMPLESIZE;
     for (i = SAMPLESIZE; i > 0; i--) {
         if (i == 1) { // Viimeisellä kierroksella asetetaan uusimmat arvot talukoihin.
-            xCoordinates[0] = array[0];
-            yCoordinates[0] = array[1];
-            zCoordinates[0] = array[2];
-        } else {
+            xCoordinates[0] = mpuValuesArray[0];
+            yCoordinates[0] = mpuValuesArray[1];
+            zCoordinates[0] = mpuValuesArray[2];
+        } else { // Siirretään arvoja taulukossa yhdellä oikealle
             xCoordinates[i - 1] = xCoordinates[i - 2];
             yCoordinates[i - 1] = yCoordinates[i - 2];
             zCoordinates[i - 1] = zCoordinates[i - 2];
         }
     }
-
+    /* Tallennetaan akseleiden keskiarvot omiin muuuttujiinsa */
     float xAverage = 0;
     float yAverage = 0;
     float zAverage = 0;
 
+    /* Lasketaan x, y ja z arvojen summat */
     uint8_t j = 0;
     for (j = 0; j < SAMPLESIZE; j++) {
         xAverage += xCoordinates[j];
         yAverage += yCoordinates[j];
         zAverage += zCoordinates[j];
     }
+    /* Jaetaan summat SAMPLESIZElla jotta saadaan keskiarvot */
     xAverage /= SAMPLESIZE;
     yAverage /= SAMPLESIZE;
     zAverage /= SAMPLESIZE;
 
-    // logiikka merkin tunnistamiseen liikkeestä
-
-    // Tunnistetaan asento painovoimalla (akseli antaa noin 1G arvoja)
+    /* Tunnistetaan asento painovoimalla (akseli antaa noin 1G arvoja)
+     * Palautetaan merkki jos vaatimukset täyttyvät */
 
     if (xAverage > 0.85 && reset == 0) {
         reset = 1;
@@ -118,7 +140,9 @@ char detectCharFromMovm(float *array) {
     } else if (yAverage < -0.85 && reset == 0) {
         reset = 1;
             return '-';
-    } else if (zAverage > 0.5 && reset == 1) {
+    }
+    /* Tämä lauseke täytyy toteutua merkkien tunnistamisien väilillä */
+    else if (zAverage > 0.65 && reset == 1) {
         reset = 0;
              return 0;
     } else {
@@ -128,31 +152,31 @@ char detectCharFromMovm(float *array) {
 
 Void sensorFxn(UArg arg0, UArg arg1) {
 
+
     float ax, ay, az, gx, gy, gz;
 
-    I2C_Handle i2cMPU; // Own i2c-interface for MPU9250 sensor
+    I2C_Handle i2cMPU; // MPU9250 anturille oma I2C rajapinta
     I2C_Params i2cMPUParams;
 
     I2C_Params_init(&i2cMPUParams);
     i2cMPUParams.bitRate = I2C_400kHz;
-    // Note the different configuration below
     i2cMPUParams.custom = (uintptr_t)&i2cMPUCfg;
 
-    // MPU power on
+    /* Liikeanturin virrat päälle */
     PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_ON);
 
-    // Wait 100ms for the MPU sensor to power up
+    /* Odotetaan 100ms liikeanturin käynnistymistä */
     Task_sleep(100000 / Clock_tickPeriod);
     System_printf("MPU9250: Power ON\n");
     System_flush();
 
-    // MPU open i2c
+    /* Avataan liikeanturille I2C väylä */
     i2cMPU = I2C_open(Board_I2C, &i2cMPUParams);
     if (i2cMPU == NULL) {
         System_abort("Error Initializing I2CMPU\n");
     }
 
-    // MPU setup and calibration
+    /* Liikeanturin asetus ja kalibrointi */
     System_printf("MPU9250: Setup and calibration...\n");
     System_flush();
 
@@ -161,7 +185,7 @@ Void sensorFxn(UArg arg0, UArg arg1) {
     System_printf("MPU9250: Setup and calibration OK\n");
     System_flush();
 
-    // Loop forever
+    /* Ikuinen silmukka */
     while (1) {
         if (programState == WAITING) {
         // MPU ask data
@@ -179,49 +203,41 @@ Void sensorFxn(UArg arg0, UArg arg1) {
                 //buzzerFxn(detectedChar);
                 programState = UART_WRITE;
             }
-
         }
-// Sleep 50ms
-            Task_sleep(50000 / Clock_tickPeriod);
+        /* Nukkumaan 50ms */
+        Task_sleep(50000 / Clock_tickPeriod);
     }
-
-    // Program never gets here..
-    // MPU close i2c
-    // I2C_close(i2cMPU);
-    // MPU power off
-    // PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_OFF);
 }
 
-// Buzzer power pin
+/* Kaiuttimen virtapinnin globaalit muuttujat */
 static PIN_Handle hBuzzer;
 static PIN_State sBuzzer;
 
-// Buzzer power pin
+/* Kaiuttimen virtapinni */
 PIN_Config cBuzzer[] = {
   Board_BUZZER | PIN_GPIO_OUTPUT_EN | PIN_GPIO_LOW | PIN_PUSHPULL | PIN_DRVSTR_MAX,
   PIN_TERMINATE
 };
 
-void buzzerCallFxn() {
-
+Void buzzerCallFxn() {
     while (1) {
+        /* Jos tila on BUZZER_WRITE eli SensorTag lähettää merkin
+         * tunnistetaan merkki ja kutsutaan buzzerFxn tällä merkillä.
+         * Kun ääni on tuotettu vaihdetaan ohjelma tilaan WAITING*/
         if (programState == BUZZER_WRITE) {
             switch (detectedChar) {
                 case '-':
                     if (buzzerFxn(detectedChar) == 0) {
-                        programState = WAITING;
                     }
-
+                    programState = WAITING;
                     break;
                 case '.':
                     if (buzzerFxn(detectedChar) == 0) {
-
                     }
                     programState = WAITING;
                     break;
                 case ' ':
                     if (buzzerFxn(detectedChar) == 0) {
-
                     }
                     programState = WAITING;
                     break;
@@ -229,8 +245,12 @@ void buzzerCallFxn() {
                     programState = WAITING;
                     break;
             }
-
-        } else if (programState == BUZZER_READ) {
+        }
+        /* Jos tila on BUZZER_READ käydään for-silmukassa morseBuffer läpi */
+        else if (programState == BUZZER_READ) {
+            /* Tässä for-silmukassa käydään läpi morseBuffer taulukko,
+             * johon on tallennettu uartista tulleet merkit, ja kutsutaan buzzerFxn
+             * funktiota joka tuottaa merkkiä vastaavan äänen.*/
             int i = 0;
             for (i = 0; i < sizeof(morseBuffer) / sizeof(morseBuffer[0]); i++) {
                 if (morseBuffer[i] == '.'
@@ -238,24 +258,26 @@ void buzzerCallFxn() {
                    || morseBuffer[i] == ' ') {
                     Task_sleep(500000 / Clock_tickPeriod);
                     buzzerFxn(morseBuffer[i]);
-                    char teksti[2];
-                    sprintf(teksti, "%c\n", morseBuffer[i]);
-                    System_printf(teksti);
+                    /* Vastaanotetun viestin tulostus konsoliin */
+                    //char teksti[2];
+                    //sprintf(teksti, "%c\n", morseBuffer[i]);
+                    //System_printf(teksti);
                 }
             }
+            /* Asetetaan kaikki morseBufferin arvot nolliksi */
             memset(morseBuffer, 0, sizeof(morseBuffer));
+            /* Nollataan myös morseBufferSize, koska merkit on postettu */
             morseBufferSize = 0;
+            /* Vaihdetaan tilakone tilaan WAITING */
             programState = WAITING;
-
         }
         Task_sleep(100000 / Clock_tickPeriod);
     }
-
-
 }
 
 int buzzerFxn(Char inputChar) {
     if (inputChar == '-') {
+        /* Tuotetaan ääni joka vastaa merkkiä '-' */
         buzzerOpen(hBuzzer);
         buzzerSetFrequency(800);
         Task_sleep(100000 / Clock_tickPeriod);
@@ -263,6 +285,7 @@ int buzzerFxn(Char inputChar) {
         return 0;
 
     } else if (inputChar == '.') {
+        /* Tuotetaan ääni joka vastaa merkkiä '.' */
         buzzerOpen(hBuzzer);
         buzzerSetFrequency(3500);
         Task_sleep(30000 / Clock_tickPeriod);
@@ -270,6 +293,7 @@ int buzzerFxn(Char inputChar) {
         return 0;
 
     } else if (inputChar == ' ') {
+        /* Tuotetaan ääni joka vastaa merkkiä ' ' */
         buzzerOpen(hBuzzer);
         buzzerSetFrequency(400);
         Task_sleep(20000 / Clock_tickPeriod);
@@ -289,6 +313,7 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
     UART_Handle uart;
     UART_Params uartParams;
 
+    /* Asetetaan uartin parametrit */
     UART_Params_init(&uartParams);
     uartParams.writeDataMode = UART_DATA_TEXT;
     uartParams.readDataMode = UART_DATA_TEXT;
@@ -319,8 +344,10 @@ Void uartTaskFxn(UArg arg0, UArg arg1) {
         Task_sleep(500000 / Clock_tickPeriod);
     }
 }
-void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len){
-
+Void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len){
+    /* Jos vastaanotetaan jokin merkeistä, jotka haluamme ilmoittaa käyttäjälle
+     * asetetaan se morseBufferiin. morseBufferSize muuttuja pitää lukua
+     * morseBufferissa olevien merkkien määrästä */
     if (uartBuffer[0] == '-' || uartBuffer[0] == '.' || uartBuffer[0] == ' ') {
         morseBuffer[morseBufferSize] = uartBuffer[0];
         morseBuffer[morseBufferSize + 1] = '\0';
@@ -331,45 +358,35 @@ void uartReadFxn(UART_Handle handle, void *rxBuf, size_t len){
     programState = BUZZER_READ;
 }
 
-
-void uartReadTaskFxn() {
-    while (1) {
-        //if (programState == UART_READ) {
-        //    programState = BUZZER_READ;
-        //}
-        Task_sleep(100000 / Clock_tickPeriod);
-    }
-}
-
 int main(void) {
-    // Sensor task
+    /* Tehtävien muuttujat */
+
+    /* Sensor task */
     Task_Handle sensorTask;
     Task_Params sensorTaskParams;
-    // Buzzer task
+    /* Buzzer task */
     Task_Handle buzzerTask;
     Task_Params buzzerTaskParams;
 
-    // Buzzer Caller task
+    /* Buzzer Caller task */
     Task_Handle buzzerCallTask;
     Task_Params buzzerCallTaskParams;
 
-    // UART task
+    /* UART task */
     Task_Handle uartTaskHandle;
     Task_Params uartTaskParams;
-    // UART_read task
-    Task_Handle uartReadTaskHandle;
-    Task_Params uartReadTaskParams;
 
+    /* Alustetaan laite, I2C sekä UART */
     Board_initGeneral();
     Board_initI2C();
     Board_initUART();
 
-    // Open MPU power pin
+    /* Avaa MPU:n virtapinni */
     hMpuPin = PIN_open(&MpuPinState, MpuPinConfig);
     if (hMpuPin == NULL) {
         System_abort("Pin open failed!");
     }
-
+    /* Luodaan sensorTask tehtävä */
     Task_Params_init(&sensorTaskParams);
     sensorTaskParams.stackSize = STACKSIZE;
     sensorTaskParams.stack = &sensorTaskStack;
@@ -377,12 +394,12 @@ int main(void) {
     if (sensorTask == NULL) {
         System_abort("Sensor task create failed!");
     }
-    // Open Buzzer power pin
+    /* Avaa kaiuttimen virtapinni */
     hBuzzer = PIN_open(&sBuzzer, cBuzzer);
     if (hBuzzer == NULL) {
       System_abort("Pin open failed!");
     }
-
+    /* Luodaan buzzerTask tehtävä */
     Task_Params_init(&buzzerTaskParams);
     buzzerTaskParams.stackSize = STACKSIZE;
     buzzerTaskParams.stack = &buzzerTaskStack;
@@ -391,7 +408,7 @@ int main(void) {
     if (buzzerTask == NULL) {
         System_abort("Buzzer task create failed");
     }
-
+    /* Luodaan buzzerCallTask tehtävä */
     Task_Params_init(&buzzerCallTaskParams);
     buzzerCallTaskParams.stackSize = STACKSIZE;
     buzzerCallTaskParams.stack = &buzzerCallTaskStack;
@@ -400,7 +417,7 @@ int main(void) {
     if (buzzerCallTask == NULL) {
         System_abort("Buzzer call task create failed");
     }
-
+    /* Luodaan uartTask tehtävä */
     Task_Params_init(&uartTaskParams);
     uartTaskParams.stackSize = STACKSIZE;
     uartTaskParams.stack = &uartTaskStack;
@@ -408,15 +425,6 @@ int main(void) {
     uartTaskHandle = Task_create(uartTaskFxn, &uartTaskParams, NULL);
     if (uartTaskHandle == NULL) {
         System_abort("UART task create failed!");
-    }
-
-    Task_Params_init(&uartReadTaskParams);
-    uartReadTaskParams.stackSize = STACKSIZE;
-    uartReadTaskParams.stack = &uartReadTaskStack;
-    uartReadTaskParams.priority=2;
-    uartReadTaskHandle = Task_create((Task_FuncPtr)uartReadTaskFxn, &uartReadTaskParams, NULL);
-    if (uartReadTaskHandle == NULL) {
-        System_abort("UART read task create failed!");
     }
 
     System_printf("Hello World\n");
